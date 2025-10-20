@@ -20,13 +20,13 @@ export function TodoApp() {
       try {
         setTodos(JSON.parse(stored));
       } catch (error) {
-        console.error("[v0] Failed to parse todos from localStorage:", error);
+        console.error(" Failed to parse todos from localStorage:", error);
       }
     }
     setIsLoaded(true);
   }, []);
 
-  // Save todos to localStorage whenever they change
+  // Save todos to localStorage
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem("todos", JSON.stringify(todos));
