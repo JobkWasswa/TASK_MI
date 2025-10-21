@@ -1,77 +1,130 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { TodoHeader } from "./todo-header";
-import { TodoInput } from "./todo-input";
+import { useState, useEffect, useCallback } from "react";
 import { TodoList } from "./todo-list";
-import { TodoFilters } from "./todo-filters";
 import { TodoStats } from "./todo-stats";
 import type { Todo, TodoFilter } from "@/lib/types";
+import { TodoInput } from "./todo-input";
+import { TodoHeader } from "./todo-header";
+import { TodoFilters } from "./todo-filters";
+
+const API_BASE_URL = "http://127.0.0.1:8000/api/todos/";
+
+async function fetchApi(url: string, method: string, data?: any): Promise<any> {
+  const response = await fetch(url, {
+    method: method,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: data ? JSON.stringify(data) : undefined,
+  });
+
+  if (method === "DELETE" && response.status === 204) {
+    return null; // Successful deletion
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API call failed (${response.status}): ${errorText}`);
+  }
+
+  // successful creation
+  if (method === "GET" || method === "POST" || method === "PATCH") {
+    return response.json();
+  }
+}
 
 export function TodoApp() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [filter, setFilter] = useState<TodoFilter>("all");
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load todos from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem("todos");
-    if (stored) {
-      try {
-        setTodos(JSON.parse(stored));
-      } catch (error) {
-        console.error(" Failed to parse todos from localStorage:", error);
-      }
+  const loadTodos = useCallback(async () => {
+    try {
+      const data: Todo[] = await fetchApi(API_BASE_URL, "GET");
+      setTodos(data);
+    } catch (error) {
+      console.error("Failed to load todos from API:", error);
+    } finally {
+      setIsLoaded(true);
     }
-    setIsLoaded(true);
   }, []);
 
-  // Save todos to localStorage
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("todos", JSON.stringify(todos));
-    }
-  }, [todos, isLoaded]);
+    loadTodos();
+  }, [loadTodos]);
 
-  const addTodo = (title: string, description?: string, dueDate?: string) => {
-    const newTodo: Todo = {
-      id: crypto.randomUUID(),
+  const addTodo = async (
+    title: string,
+    description?: string,
+    dueDate?: string
+  ) => {
+    const newTodoData = {
       title,
-      description,
+      description: description || null,
       completed: false,
-      dueDate,
-      createdAt: new Date().toISOString(),
+      dueDate: dueDate || null,
     };
-    setTodos([newTodo, ...todos]);
+
+    try {
+      const newTodo: Todo = await fetchApi(API_BASE_URL, "POST", newTodoData);
+
+      setTodos((prevTodos) => [newTodo, ...prevTodos]);
+    } catch (error) {
+      console.error("Failed to add todo:", error);
+    }
   };
 
-  const toggleTodo = (id: string) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, completed: !todo.completed } : todo
-      )
-    );
-  };
-
-  const deleteTodo = (id: string) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
-  };
-
-  const updateTodo = (
+  const updateTodo = async (
     id: string,
     updates: Partial<Omit<Todo, "id" | "createdAt">>
   ) => {
-    setTodos(
-      todos.map((todo) => (todo.id === id ? { ...todo, ...updates } : todo))
-    );
+    const todoUrl = `${API_BASE_URL}${id}/`;
+
+    try {
+      const updatedTodo: Todo = await fetchApi(todoUrl, "PATCH", updates);
+
+      setTodos((prevTodos) =>
+        prevTodos.map((todo) => (todo.id === id ? updatedTodo : todo))
+      );
+    } catch (error) {
+      console.error("Failed to update todo:", error);
+    }
+  };
+
+  const toggleTodo = (id: string) => {
+    const todoToToggle = todos.find((t) => t.id === id);
+    if (todoToToggle) {
+      updateTodo(id, { completed: !todoToToggle.completed });
+    }
+  };
+
+  const deleteTodo = async (id: string) => {
+    const todoUrl = `${API_BASE_URL}${id}/`;
+
+    try {
+      await fetchApi(todoUrl, "DELETE");
+
+      setTodos((prevTodos) => prevTodos.filter((todo) => todo.id !== id));
+    } catch (error) {
+      console.error("Failed to delete todo:", error);
+    }
+  };
+
+  const clearCompleted = async () => {
+    const clearCompletedUrl = `${API_BASE_URL}clear_completed/`;
+
+    try {
+      await fetchApi(clearCompletedUrl, "DELETE");
+
+      setTodos((prevTodos) => prevTodos.filter((todo) => !todo.completed));
+    } catch (error) {
+      console.error("Failed to clear completed tasks:", error);
+    }
   };
 
   const reorderTodos = (newTodos: Todo[]) => {
     setTodos(newTodos);
-  };
-
-  const clearCompleted = () => {
-    setTodos(todos.filter((todo) => !todo.completed));
   };
 
   const filteredTodos = todos.filter((todo) => {
